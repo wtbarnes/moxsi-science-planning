@@ -7,7 +7,7 @@ from astropy.visualization import ImageNormalize, LogStretch
 import sunpy.map  # this loads the colormaps
 from sunpy.coordinates import get_earth
 
-from util import make_moxsi_ndcube, construct_overlappogram
+from util import make_moxsi_ndcube, construct_overlappogram, color_lat_lon_axes
 
 
 if __name__ == '__main__':
@@ -22,9 +22,14 @@ if __name__ == '__main__':
         savdata["moxsi1_img"], savdata["cubixss_wave"] * u.angstrom
     )
 
-    moxsi_overlap = construct_overlappogram(moxsi_cube, angle=10 * u.deg, order=0, observer=observer)
+    moxsi_overlap = construct_overlappogram(
+        moxsi_cube,
+        angle=45 * u.deg,
+        order=1,
+        observer=observer
+    )
 
-    moxsi_overlap_cutout = moxsi_overlap[400:600,400:600, :]
-
-    ani = moxsi_overlap_cutout.plot(**plot_props)
-    plt.show()
+#    moxsi_overlap_cutout = moxsi_overlap[400:600,400:600, :]
+#
+#    ani = moxsi_overlap_cutout.plot(**plot_props)
+#    plt.show()

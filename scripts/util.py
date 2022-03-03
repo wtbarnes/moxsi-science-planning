@@ -17,6 +17,36 @@ CDELT_WAVE = 55 * u.milliangstrom / u.pix
 BUNIT = 'ph / (pix s)'
 
 
+def color_lat_lon_axes(ax,
+                       lon_color='C0',
+                       lat_color='C3',
+                       lat_tick_ops=None,
+                       lon_tick_ops=None):
+    # This is just a convenience function for setting up the
+    # coordinate grid. With a complicated WCS like this, the
+    # defaults don't always look very nice or provide much info.
+    # In particular, this will color the different ticks, grid
+    # lines, labels, etc. so that the corresponding world coord
+    # can easily be matched.
+    lon,lat = ax.coords
+    # Ticks-lon
+    lon.set_ticklabel_position('all')
+    lon.set_axislabel(ax.get_xlabel(),color=lon_color)
+    lon.set_ticklabel(color=lon_color)
+    if lon_tick_ops is not None:
+        lon.set_ticks(**lon_tick_ops)
+    # Ticks-lat
+    lat.set_ticklabel_position('all')
+    lat.set_axislabel(ax.get_ylabel(),color=lat_color)
+    lat.set_ticklabel(color=lat_color)
+    if lat_tick_ops is not None:
+        lat.set_ticks(**lat_tick_ops)
+    # Grid
+    lon.grid(color=lon_color,grid_type='contours')
+    lat.grid(color=lat_color,grid_type='contours')
+    return lon,lat
+
+
 def hgs_observer_to_keys(observer):
     return {
         'DATE-OBS': observer.obstime.isot,
@@ -38,8 +68,8 @@ def construct_rot_matrix(angle:u.deg, order=1):
     order:
         Order of the dispersion. Default is 1.
     """
-    return np.array([[np.cos(angle), -np.sin(angle), order*np.sin(angle)],
-                     [np.sin(angle), np.cos(angle), -order*np.cos(angle)],
+    return np.array([[np.cos(angle), np.sin(angle), -order*np.sin(angle)],
+                     [-np.sin(angle), np.cos(angle), -order*np.cos(angle)],
                      [0, 0, 1]])
 
 
@@ -133,7 +163,7 @@ def overlap_arrays(cube, dispersion_angle=0*u.deg, clip=True, order=0):
         # will suffice for now
         layers = []
         for d in cube.data:
-            layers.append(rotate_image(d, rmatrix[:2,:2], order=order))
+            layers.append(rotate_image(d, rmatrix[:2,:2].T, order=order))
         rot_data = np.array(layers)
     shape = rot_data.shape
     n_y = int(shape[0] + shape[1])
