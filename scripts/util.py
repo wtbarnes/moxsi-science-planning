@@ -2,12 +2,12 @@
 Utility functions for constucting overlappograms
 """
 import numpy as np
+import scipy.ndimage
 import astropy.constants
 import astropy.units as u
 import astropy.wcs
 import ndcube
 from sunpy.coordinates import get_earth
-
 from sunpy.image.transform import affine_transform
 
 # The following numbers are from Jake and Albert:
@@ -22,25 +22,22 @@ def color_lat_lon_axes(ax,
                        lat_color='C3',
                        lat_tick_ops=None,
                        lon_tick_ops=None):
-    # This is just a convenience function for setting up the
-    # coordinate grid. With a complicated WCS like this, the
-    # defaults don't always look very nice or provide much info.
-    # In particular, this will color the different ticks, grid
-    # lines, labels, etc. so that the corresponding world coord
-    # can easily be matched.
-    lon,lat = ax.coords
+    lat_tick_ops = {} if lat_tick_ops is None else lat_tick_ops
+    lon_tick_ops = {} if lon_tick_ops is None else lon_tick_ops
+    lat_tick_ops['color'] = lat_color
+    lon_tick_ops['color'] = lon_color
+    lon = ax.coords[0]
+    lat = ax.coords[1]
     # Ticks-lon
-    lon.set_ticklabel_position('all')
+    lon.set_ticklabel_position('lb')
     lon.set_axislabel(ax.get_xlabel(),color=lon_color)
     lon.set_ticklabel(color=lon_color)
-    if lon_tick_ops is not None:
-        lon.set_ticks(**lon_tick_ops)
+    lon.set_ticks(**lon_tick_ops)
     # Ticks-lat
-    lat.set_ticklabel_position('all')
+    lat.set_ticklabel_position('lb')
     lat.set_axislabel(ax.get_ylabel(),color=lat_color)
     lat.set_ticklabel(color=lat_color)
-    if lat_tick_ops is not None:
-        lat.set_ticks(**lat_tick_ops)
+    lat.set_ticks(**lat_tick_ops)
     # Grid
     lon.grid(color=lon_color,grid_type='contours')
     lat.grid(color=lat_color,grid_type='contours')
@@ -58,19 +55,24 @@ def hgs_observer_to_keys(observer):
 
 
 @u.quantity_input
-def construct_rot_matrix(angle:u.deg, order=1):
+def construct_rot_matrix(roll_angle:u.deg, dispersion_angle:u.deg, order=1):
     """
     Parameters
     ----------
-    angle: 
+    roll_angle: 
         Angle between the second pixel axis and the y-like
         world axis.
+    dispersion_angle:
+        Angle between the wavelength (dispersion) axis and the second pixel axis.
     order:
         Order of the dispersion. Default is 1.
     """
-    return np.array([[np.cos(angle), np.sin(angle), -order*np.sin(angle)],
-                     [-np.sin(angle), np.cos(angle), -order*np.cos(angle)],
-                     [0, 0, 1]])
+    # I don't really know about that last row...where should the zeros go?
+    return np.array([
+        [np.cos(roll_angle), np.sin(roll_angle), -order*(np.sin(roll_angle))],
+        [-np.sin(roll_angle), np.cos(roll_angle), -order*(np.cos(roll_angle))],
+        [0, 0, 1]
+    ])
 
 
 def rmatrix_to_pcij(rmatrix):
@@ -131,7 +133,7 @@ def rotate_image(data, rmatrix, order=4, missing=0.0,):
     return new_data
 
 
-def overlap_arrays(cube, dispersion_angle=0*u.deg, clip=True, order=0):
+def overlap_arrays(cube, roll_angle=0*u.deg, dispersion_angle=0*u.deg, clip=True):
     """
     Flatten intensity cube into an overlappogram such that the first array index direction
     and wavelength directions overlap. 
@@ -146,31 +148,45 @@ def overlap_arrays(cube, dispersion_angle=0*u.deg, clip=True, order=0):
 
     Parameters
     ----------
+    roll_angle : `float`, optional
+        Angle between the y-like pixel axis and the latitude world coordinate. This is often
+        referred to as the "roll angle" of the satellite.
     dispersion_angle : `float`, optional
-        Angle between the dispersion axis and the latitude world coordinate. The dispersion axis
-        is always aligned with the y-like (row-indexing) pixel axis. A dispersion angle of 0
-        means that the dispersion is completely latitudinal.
+        Angle between the y-like pixel axis and the dispersion or wavelength. Ideally this should
+        be small as non-zero values mean that information is lost off the edges of the detector.
+        A dispersion angle of 0 means that the y-like pixel axis and wavelength are aligned such
+        that all dispersion occurs along that pixel axis.
     clip : `bool`, optional
         If true, ensure that the dispersion direction has the same shape as the wavelength
         dimension.
     """
-    if dispersion_angle % (360*u.deg) == 0:
+    if roll_angle % (360*u.deg) == 0:
         rot_data = cube.data
     else:
-        rmatrix = construct_rot_matrix(dispersion_angle)
+        rmatrix = construct_rot_matrix(roll_angle, dispersion_angle)
         # apply the necessary rotation to every slice in the cube.
         # this is an overly complicated way to do the rotation, but
         # will suffice for now
         layers = []
         for d in cube.data:
-            layers.append(rotate_image(d, rmatrix[:2,:2].T, order=order))
+            layers.append(rotate_image(d, rmatrix[:2,:2].T, order=0))
         rot_data = np.array(layers)
     shape = rot_data.shape
     n_y = int(shape[0] + shape[1])
     n_x = int(shape[2])
     overlappogram = np.zeros((n_y, n_x))
     for i in range(shape[0]):
-        overlappogram[i:(i+shape[1]), :] += rot_data[i, :, :]
+        if dispersion_angle % (360*u.deg) == 0:
+            overlappogram[i:(i+shape[1]), :] += rot_data[i, :, :]
+        else:
+            layer = apply_dispersion_shift(
+                dispersion_angle,
+                rot_data[i, :, :],
+                overlappogram.shape,
+                i,
+                i+shape[1],
+            )
+            overlappogram += layer
     if clip:
         # Clip to desired range
         # When shape[1] is even, clip_1 == clip_2
@@ -182,6 +198,19 @@ def overlap_arrays(cube, dispersion_angle=0*u.deg, clip=True, order=0):
         overlappogram = overlappogram[clip_1:(overlappogram.shape[0]-clip_2),:]
 
     return overlappogram  * cube.unit
+
+
+def apply_dispersion_shift(gamma, array, overlap_shape, row_start, row_end):
+    # calculate center (in pix coordinates, relative to center)
+    center = np.array([(row_start + row_end)/2 - overlap_shape[0]/2, 0])
+    # calculate new center
+    new_center = np.array([np.cos(gamma), -np.sin(gamma)]) * center[0]
+    # calculate shift
+    shift = new_center - center
+    # Create dummy
+    dummy = np.zeros(overlap_shape)
+    dummy[row_start:row_end, :] = array
+    return scipy.ndimage.shift(dummy, shift)
 
 
 def strided_overlappogram(overlappogram):
@@ -229,15 +258,30 @@ def make_moxsi_ndcube(data, wavelength, cdelt1=CDELT_SPACE, cdelt2=CDELT_SPACE):
 
 
 @u.quantity_input
-def construct_overlappogram(cube, angle=0*u.deg, order=1, observer=None):
+def construct_overlappogram(cube,
+                            roll_angle=0*u.deg,
+                            dispersion_angle=0*u.deg,
+                            order=1,
+                            observer=None,
+                            correlate_p12_with_wave=False):
     """
     TODO: generalize to any direction for the dispersion axis. This still
           assumes that the dispersion axis is exactly aligned with one
           of the pixel axes (in particular, p2).
     """
-    rmatrix = construct_rot_matrix(angle, order=order)
+    rmatrix = construct_rot_matrix(roll_angle, dispersion_angle, order=order)
+    if correlate_p12_with_wave:
+        # This aligns the dispersion axis with the wavelength axis
+        # and decorrelates wavelength with the the third "fake"
+        # pixel axis. This means that wavelength *does not* vary
+        # as you increment that third axis.
+        # In general, this will be dependent on the angle between
+        # the dispersion axis and the pixel axes. For now, we
+        # assume that the dispersion is aligned along the y-like
+        # pixel axis p2.
+        rmatrix[2,:] = [-np.sin(dispersion_angle), np.cos(dispersion_angle), 0]
     # Flatten to overlappogram
-    moxsi_overlap = overlap_arrays(cube, dispersion_angle=angle)
+    moxsi_overlap = overlap_arrays(cube, roll_angle=roll_angle, dispersion_angle=dispersion_angle)
     # Make strided 3D array
     wave = cube.axis_world_coords(0)[0].to('angstrom')
     moxsi_strided_overlap = strided_overlappogram(moxsi_overlap)
