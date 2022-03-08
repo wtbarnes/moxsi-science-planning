@@ -55,7 +55,35 @@ def hgs_observer_to_keys(observer):
 
 
 @u.quantity_input
-def construct_rot_matrix(roll_angle:u.deg, dispersion_angle:u.deg, order=1):
+def construct_rot_matrix(roll_angle:u.deg, order):
+    """
+    Parameters
+    ----------
+    roll_angle: 
+        Angle between the second pixel axis and the y-like
+        world axis.
+    order:
+        Order of the dispersion
+    """
+    # I don't really know about that last row...where should the zeros go?
+    return np.array([
+        [np.cos(roll_angle), np.sin(roll_angle), -order*(np.sin(roll_angle))],
+        [-np.sin(roll_angle), np.cos(roll_angle), -order*(np.cos(roll_angle))],
+        [0, 0, 1]
+    ])
+
+
+@u.quantity_input
+def construct_dispersion_matrix(dispersion_angle:u.deg):
+    return np.array([
+        [np.cos(dispersion_angle), np.sin(dispersion_angle), 0],
+        [-np.sin(dispersion_angle), np.cos(dispersion_angle), 0],
+        [0, 0, 1],
+    ])
+
+
+@u.quantity_input
+def construct_pcij(roll_angle:u.deg, dispersion_angle:u.deg, order=1):
     """
     Parameters
     ----------
@@ -67,12 +95,9 @@ def construct_rot_matrix(roll_angle:u.deg, dispersion_angle:u.deg, order=1):
     order:
         Order of the dispersion. Default is 1.
     """
-    # I don't really know about that last row...where should the zeros go?
-    return np.array([
-        [np.cos(roll_angle), np.sin(roll_angle), -order*(np.sin(roll_angle))],
-        [-np.sin(roll_angle), np.cos(roll_angle), -order*(np.cos(roll_angle))],
-        [0, 0, 1]
-    ])
+    roll_rot = construct_rot_matrix(roll_angle, order)
+    disp_rot = construct_dispersion_matrix(dispersion_angle)
+    return  disp_rot.T @ roll_rot @ disp_rot
 
 
 def rmatrix_to_pcij(rmatrix):
@@ -113,14 +138,18 @@ def rotate_image(data, rmatrix, order=4, missing=0.0,):
     pixel_array_center = (np.flipud(new_data.shape) - 1) / 2.0
 
     # Apply the rotation to the image data
-    new_data = affine_transform(new_data.T,
-                                np.asarray(rmatrix),
-                                order=order,
-                                scale=1.0,
-                                image_center=np.flipud(pixel_array_center),
-                                recenter=False,
-                                missing=missing,
-                                use_scipy=True).T
+    # escape hatch for skipping unneeded rotation
+    if not np.all(new_data == 0.0):
+        new_data = affine_transform(
+            new_data.T,
+            np.asarray(rmatrix),
+            order=order,
+            scale=1.0,
+            image_center=np.flipud(pixel_array_center),
+            recenter=False,
+            missing=missing,
+            use_scipy=True
+        ).T
 
     # Unpad the array if necessary
     unpad_x = -np.min((diff[1], 0))
@@ -163,30 +192,28 @@ def overlap_arrays(cube, roll_angle=0*u.deg, dispersion_angle=0*u.deg, clip=True
     if roll_angle % (360*u.deg) == 0:
         rot_data = cube.data
     else:
-        rmatrix = construct_rot_matrix(roll_angle, dispersion_angle)
+        # The order here is not important
+        rmatrix = construct_rot_matrix(roll_angle, 1)[:2,:2]
         # apply the necessary rotation to every slice in the cube.
         # this is an overly complicated way to do the rotation, but
         # will suffice for now
         layers = []
         for d in cube.data:
-            layers.append(rotate_image(d, rmatrix[:2,:2].T, order=0))
+            layers.append(rotate_image(d, rmatrix.T, order=0, missing=0.0))
         rot_data = np.array(layers)
     shape = rot_data.shape
     n_y = int(shape[0] + shape[1])
     n_x = int(shape[2])
     overlappogram = np.zeros((n_y, n_x))
     for i in range(shape[0]):
-        if dispersion_angle % (360*u.deg) == 0:
-            overlappogram[i:(i+shape[1]), :] += rot_data[i, :, :]
-        else:
-            layer = apply_dispersion_shift(
-                dispersion_angle,
-                rot_data[i, :, :],
-                overlappogram.shape,
-                i,
-                i+shape[1],
-            )
-            overlappogram += layer
+        layer = apply_dispersion_shift(
+            dispersion_angle,
+            rot_data[i, :, :],
+            overlappogram.shape,
+            i,
+            i+shape[1],
+        )
+        overlappogram += layer
     if clip:
         # Clip to desired range
         # When shape[1] is even, clip_1 == clip_2
@@ -210,22 +237,28 @@ def apply_dispersion_shift(gamma, array, overlap_shape, row_start, row_end):
     # Create dummy
     dummy = np.zeros(overlap_shape)
     dummy[row_start:row_end, :] = array
+    # If aligned with the pixel axis, don't waste time applying 0 shift
+    if gamma % (360*u.deg) == 0:
+        return dummy
+    # If the array is all zeros anyway, don't waste time shifting nothing
+    if np.all(dummy == 0.0):
+        return dummy
     return scipy.ndimage.shift(dummy, shift)
 
 
-def strided_overlappogram(overlappogram):
+def strided_overlappogram(overlappogram, wave):
     """
     Return a "strided" version of the overlappogram array.
     
-    For an overlappogram image of shape (N_lam, N_pix), this
-    function creates an array of dimension (N_lam, N_lam, N_pix)
+    For an overlappogram image of shape (N_pix2, N_pix1), this
+    function creates an array of dimension (N_lam, N_pix2, N_pix1)
     where each layer is a view of the original array. In other
     words, the values at (k,i,j) and (k+1,i,j) point to the
     same place in memory.
     """
     return np.lib.stride_tricks.as_strided(
         overlappogram,
-        shape=overlappogram.shape[:1]+overlappogram.shape,
+        shape=wave.shape+overlappogram.shape,
         strides=(0,)+overlappogram.strides,
         writeable=False
     )
@@ -257,6 +290,35 @@ def make_moxsi_ndcube(data, wavelength, cdelt1=CDELT_SPACE, cdelt2=CDELT_SPACE):
     return ndcube.NDCube(data, wcs=wcs, unit=BUNIT)
 
 
+def overlappogram_wcs(shape, wave, cdelt, cunit, pc_matrix, observer):
+    wcs_keys = {
+        'WCSAXES': 3,
+        'NAXIS1': shape[2],
+        'NAXIS2': shape[1],
+        'NAXIS3': shape[0],
+        'CDELT1': u.Quantity(cdelt[0], f'{cunit[0]} / pix').to('arcsec / pix').value,
+        'CDELT2': u.Quantity(cdelt[1], f'{cunit[1]} / pix').to('arcsec / pix').value,
+        'CDELT3': u.Quantity(cdelt[2], f'{cunit[2]} / pix').to('Angstrom / pix').value,
+        'CUNIT1': 'arcsec',
+        'CUNIT2': 'arcsec',
+        'CUNIT3': 'Angstrom',
+        'CTYPE1': 'HPLN-TAN',
+        'CTYPE2': 'HPLT-TAN',
+        'CTYPE3': 'WAVE',
+        'CRPIX1': (shape[2] + 1)/2,
+        'CRPIX2': (shape[1] + 1)/2,
+        'CRPIX3': (shape[0] + 1)/2,
+        'CRVAL1': 0,
+        'CRVAL2': 0,
+        'CRVAL3': ((wave[0] + wave[-1])/2).to('angstrom').value,
+    }
+    wcs_keys = {**wcs_keys, **rmatrix_to_pcij(pc_matrix)}
+    if observer is not None:
+        wcs_keys = {**wcs_keys, **hgs_observer_to_keys(observer)}
+    wcs = astropy.wcs.WCS(wcs_keys)
+    return wcs
+
+
 @u.quantity_input
 def construct_overlappogram(cube,
                             roll_angle=0*u.deg,
@@ -269,7 +331,7 @@ def construct_overlappogram(cube,
           assumes that the dispersion axis is exactly aligned with one
           of the pixel axes (in particular, p2).
     """
-    rmatrix = construct_rot_matrix(roll_angle, dispersion_angle, order=order)
+    pc_matrix = construct_pcij(roll_angle, dispersion_angle, order=order)
     if correlate_p12_with_wave:
         # This aligns the dispersion axis with the wavelength axis
         # and decorrelates wavelength with the the third "fake"
@@ -279,36 +341,19 @@ def construct_overlappogram(cube,
         # the dispersion axis and the pixel axes. For now, we
         # assume that the dispersion is aligned along the y-like
         # pixel axis p2.
-        rmatrix[2,:] = [-np.sin(dispersion_angle), np.cos(dispersion_angle), 0]
+        pc_matrix[2,:] = [-np.sin(dispersion_angle), np.cos(dispersion_angle), 0]
     # Flatten to overlappogram
     moxsi_overlap = overlap_arrays(cube, roll_angle=roll_angle, dispersion_angle=dispersion_angle)
     # Make strided 3D array
     wave = cube.axis_world_coords(0)[0].to('angstrom')
-    moxsi_strided_overlap = strided_overlappogram(moxsi_overlap)
-    wcs_keys = {
-        'WCSAXES': 3,
-        'NAXIS1': moxsi_strided_overlap.shape[2],
-        'NAXIS2': moxsi_strided_overlap.shape[1],
-        'NAXIS3': moxsi_strided_overlap.shape[0],
-        'CDELT1': u.Quantity(cube.wcs.wcs.cdelt[0], f'{cube.wcs.wcs.cunit[0]} / pix').to('arcsec / pix').value,
-        'CDELT2': u.Quantity(cube.wcs.wcs.cdelt[1], f'{cube.wcs.wcs.cunit[1]} / pix').to('arcsec / pix').value,
-        'CDELT3': u.Quantity(cube.wcs.wcs.cdelt[2], f'{cube.wcs.wcs.cunit[2]} / pix').to('Angstrom / pix').value,
-        'CUNIT1': 'arcsec',
-        'CUNIT2': 'arcsec',
-        'CUNIT3': 'Angstrom',
-        'CTYPE1': 'HPLN-TAN',
-        'CTYPE2': 'HPLT-TAN',
-        'CTYPE3': 'WAVE',
-        'CRPIX1': (moxsi_strided_overlap.shape[2] + 1)/2,
-        'CRPIX2': (moxsi_strided_overlap.shape[1] + 1)/2,
-        'CRPIX3': (moxsi_strided_overlap.shape[0] + 1)/2,
-        'CRVAL1': 0,
-        'CRVAL2': 0,
-        'CRVAL3': ((wave[0] + wave[-1])/2).to('angstrom').value,
-    }
-    wcs_keys = {**wcs_keys, **rmatrix_to_pcij(rmatrix)}
-    if observer is not None:
-        wcs_keys = {**wcs_keys, **hgs_observer_to_keys(observer)}
-    wcs = astropy.wcs.WCS(wcs_keys)
+    moxsi_strided_overlap = strided_overlappogram(moxsi_overlap, wave)
+    wcs = overlappogram_wcs(
+        moxsi_strided_overlap.shape,
+        wave,
+        cube.wcs.wcs.cdelt,
+        cube.wcs.wcs.cunit,
+        pc_matrix,
+        observer,
+    )
     overlap_cube = ndcube.NDCube(moxsi_strided_overlap, wcs=wcs)
     return overlap_cube
