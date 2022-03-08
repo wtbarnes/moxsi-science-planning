@@ -20,8 +20,10 @@ BUNIT = 'ph / (pix s)'
 def color_lat_lon_axes(ax,
                        lon_color='C0',
                        lat_color='C3',
+                       wvl_color='C4',
                        lat_tick_ops=None,
-                       lon_tick_ops=None):
+                       lon_tick_ops=None,
+                       wvl_tick_ops=None):
     lat_tick_ops = {} if lat_tick_ops is None else lat_tick_ops
     lon_tick_ops = {} if lon_tick_ops is None else lon_tick_ops
     lat_tick_ops['color'] = lat_color
@@ -41,6 +43,19 @@ def color_lat_lon_axes(ax,
     # Grid
     lon.grid(color=lon_color,grid_type='contours')
     lat.grid(color=lat_color,grid_type='contours')
+    # If wavelength axis is set, do some styling there too
+    if len(ax.coords.get_coord_range()) > 2:
+        wvl = ax.coords[2]
+        wvl_tick_ops = {} if wvl_tick_ops is None else wvl_tick_ops
+        wvl_tick_ops['color'] = wvl_color
+        wvl.set_ticklabel_position('rt')
+        wvl.set_format_unit(u.angstrom)
+        wvl.set_major_formatter('x.x')
+        wvl.set_ticklabel(color=wvl_color)
+        wvl.set_ticks(color=wvl_color)
+        wvl.set_axislabel('Wavelength [Angstrom]', color=wvl_color)
+        wvl.grid(color=wvl_color, grid_type='contours')
+        return lon, lat, wvl
     return lon,lat
 
 
@@ -327,9 +342,15 @@ def construct_overlappogram(cube,
                             observer=None,
                             correlate_p12_with_wave=False):
     """
-    TODO: generalize to any direction for the dispersion axis. This still
-          assumes that the dispersion axis is exactly aligned with one
-          of the pixel axes (in particular, p2).
+    Given a spectral cube, build an overlappogram "cube"
+
+    Parameters
+    ----------
+    cube
+    roll_angle
+    dispersion_angle
+    observer
+    correlate_p12_with_wave
     """
     pc_matrix = construct_pcij(roll_angle, dispersion_angle, order=order)
     if correlate_p12_with_wave:
@@ -343,7 +364,11 @@ def construct_overlappogram(cube,
         # pixel axis p2.
         pc_matrix[2,:] = [-np.sin(dispersion_angle), np.cos(dispersion_angle), 0]
     # Flatten to overlappogram
-    moxsi_overlap = overlap_arrays(cube, roll_angle=roll_angle, dispersion_angle=dispersion_angle)
+    moxsi_overlap = overlap_arrays(
+        cube,
+        roll_angle=roll_angle,
+        dispersion_angle=dispersion_angle
+    )
     # Make strided 3D array
     wave = cube.axis_world_coords(0)[0].to('angstrom')
     moxsi_strided_overlap = strided_overlappogram(moxsi_overlap, wave)
