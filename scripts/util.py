@@ -70,35 +70,26 @@ def hgs_observer_to_keys(observer):
 
 
 @u.quantity_input
-def construct_rot_matrix(roll_angle:u.deg, order):
-    """
-    Parameters
-    ----------
-    roll_angle: 
-        Angle between the second pixel axis and the y-like
-        world axis.
-    order:
-        Order of the dispersion
-    """
-    # I don't really know about that last row...where should the zeros go?
+def rotation_matrix(angle:u.deg):
     return np.array([
-        [np.cos(roll_angle), np.sin(roll_angle), -order*(np.sin(roll_angle))],
-        [-np.sin(roll_angle), np.cos(roll_angle), -order*(np.cos(roll_angle))],
+        [np.cos(angle), np.sin(angle), 0],
+        [-np.sin(angle), np.cos(angle), 0],
         [0, 0, 1]
     ])
 
 
 @u.quantity_input
-def construct_dispersion_matrix(dispersion_angle:u.deg):
+def dispersion_matrix(order):
     return np.array([
-        [np.cos(dispersion_angle), np.sin(dispersion_angle), 0],
-        [-np.sin(dispersion_angle), np.cos(dispersion_angle), 0],
+        [1, 0, 0],
+        [0, 1, -order],
         [0, 0, 1],
     ])
 
 
 @u.quantity_input
-def construct_pcij(roll_angle:u.deg, dispersion_angle:u.deg, order=1):
+def construct_pcij(roll_angle:u.deg, dispersion_angle:u.deg, order=1,
+                   correlate_p12_with_wave=False):
     """
     Parameters
     ----------
@@ -110,16 +101,26 @@ def construct_pcij(roll_angle:u.deg, dispersion_angle:u.deg, order=1):
     order:
         Order of the dispersion. Default is 1.
     """
-    roll_rot = construct_rot_matrix(roll_angle, order)
-    disp_rot = construct_dispersion_matrix(dispersion_angle)
-    return  disp_rot.T @ roll_rot @ disp_rot
+    R_2 = rotation_matrix(roll_angle - dispersion_angle)
+    D = dispersion_matrix(order)
+    if correlate_p12_with_wave:
+        # This aligns the dispersion axis with the wavelength axis
+        # and decorrelates wavelength with the the third "fake"
+        # pixel axis. This means that wavelength *does not* vary
+        # as you increment that third axis.
+        # This is not strictly correct as the world grid at each p3
+        # should only correspond to a particular wavelength, not
+        # all of them.
+        D[2,:] = [0, 1, 0]
+    R_1 = rotation_matrix(dispersion_angle)
+    return R_2 @ D @ R_1
 
 
-def rmatrix_to_pcij(rmatrix):
+def get_pcij_keys(pcij_matrix):
     pcij_keys = {}
-    for i in range(rmatrix.shape[0]):
-        for j in range(rmatrix.shape[1]):
-            pcij_keys[f'PC{i+1}_{j+1}'] = rmatrix[i,j]
+    for i in range(pcij_matrix.shape[0]):
+        for j in range(pcij_matrix.shape[1]):
+            pcij_keys[f'PC{i+1}_{j+1}'] = pcij_matrix[i,j]
     return pcij_keys
 
 
@@ -208,7 +209,7 @@ def overlap_arrays(cube, roll_angle=0*u.deg, dispersion_angle=0*u.deg, clip=True
         rot_data = cube.data
     else:
         # The order here is not important
-        rmatrix = construct_rot_matrix(roll_angle, 1)[:2,:2]
+        rmatrix = rotation_matrix(roll_angle)[:2,:2]
         # apply the necessary rotation to every slice in the cube.
         # this is an overly complicated way to do the rotation, but
         # will suffice for now
@@ -216,6 +217,7 @@ def overlap_arrays(cube, roll_angle=0*u.deg, dispersion_angle=0*u.deg, clip=True
         for d in cube.data:
             layers.append(rotate_image(d, rmatrix.T, order=0, missing=0.0))
         rot_data = np.array(layers)
+        # FIXME: do we need to cut this array down to the detector size?
     shape = rot_data.shape
     n_y = int(shape[0] + shape[1])
     n_x = int(shape[2])
@@ -246,7 +248,7 @@ def apply_dispersion_shift(gamma, array, overlap_shape, row_start, row_end):
     # calculate center (in pix coordinates, relative to center)
     center = np.array([(row_start + row_end)/2 - overlap_shape[0]/2, 0])
     # calculate new center
-    new_center = np.array([np.cos(gamma), -np.sin(gamma)]) * center[0]
+    new_center = rotation_matrix(gamma)[:2,:2] @ center
     # calculate shift
     shift = new_center - center
     # Create dummy
@@ -327,7 +329,7 @@ def overlappogram_wcs(shape, wave, cdelt, cunit, pc_matrix, observer):
         'CRVAL2': 0,
         'CRVAL3': ((wave[0] + wave[-1])/2).to('angstrom').value,
     }
-    wcs_keys = {**wcs_keys, **rmatrix_to_pcij(pc_matrix)}
+    wcs_keys = {**wcs_keys, **get_pcij_keys(pc_matrix)}
     if observer is not None:
         wcs_keys = {**wcs_keys, **hgs_observer_to_keys(observer)}
     wcs = astropy.wcs.WCS(wcs_keys)
@@ -352,33 +354,24 @@ def construct_overlappogram(cube,
     observer
     correlate_p12_with_wave
     """
-    pc_matrix = construct_pcij(roll_angle, dispersion_angle, order=order)
-    if correlate_p12_with_wave:
-        # This aligns the dispersion axis with the wavelength axis
-        # and decorrelates wavelength with the the third "fake"
-        # pixel axis. This means that wavelength *does not* vary
-        # as you increment that third axis.
-        # In general, this will be dependent on the angle between
-        # the dispersion axis and the pixel axes. For now, we
-        # assume that the dispersion is aligned along the y-like
-        # pixel axis p2.
-        pc_matrix[2,:] = [-np.sin(dispersion_angle), np.cos(dispersion_angle), 0]
+    pc_matrix = construct_pcij(roll_angle, dispersion_angle, order=order,
+                               correlate_p12_with_wave=correlate_p12_with_wave)
     # Flatten to overlappogram
-    moxsi_overlap = overlap_arrays(
+    moxsi_array = overlap_arrays(
         cube,
         roll_angle=roll_angle,
         dispersion_angle=dispersion_angle
     )
     # Make strided 3D array
     wave = cube.axis_world_coords(0)[0].to('angstrom')
-    moxsi_strided_overlap = strided_overlappogram(moxsi_overlap, wave)
+    moxsi_strided_array = strided_overlappogram(moxsi_array, wave)
     wcs = overlappogram_wcs(
-        moxsi_strided_overlap.shape,
+        moxsi_strided_array.shape,
         wave,
         cube.wcs.wcs.cdelt,
         cube.wcs.wcs.cunit,
         pc_matrix,
         observer,
     )
-    overlap_cube = ndcube.NDCube(moxsi_strided_overlap, wcs=wcs)
+    overlap_cube = ndcube.NDCube(moxsi_strided_array, wcs=wcs)
     return overlap_cube
