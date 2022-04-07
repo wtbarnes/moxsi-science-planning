@@ -1,6 +1,7 @@
 data/
 docs/
 *.mp4
+*.fits
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

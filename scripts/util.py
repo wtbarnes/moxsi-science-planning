@@ -7,14 +7,27 @@ import astropy.constants
 import astropy.units as u
 import astropy.wcs
 import ndcube
-from sunpy.coordinates import get_earth
+import reproject
 from sunpy.image.transform import affine_transform
+from sunpy.visualization.wcsaxes_compat import wcsaxes_heliographic_overlay
+
 
 # The following numbers are from Jake and Albert:
 CDELT_SPACE = 5.66 * u.arcsec / u.pix
 CDELT_WAVE = 55 * u.milliangstrom / u.pix
 # The units are from Athiray (and the proposal figure)
 BUNIT = 'ph / (pix s)'
+
+
+def draw_hgs_grid(ax, observer):
+    hgs_grid = wcsaxes_heliographic_overlay(
+        ax,
+        obstime=observer.obstime,
+        rsun=observer.rsun,
+    )
+    hgs_grid[0].grid(grid_type='contours')
+    hgs_grid[1].grid(grid_type='contours')
+    return hgs_grid
 
 
 def color_lat_lon_axes(ax,
@@ -145,9 +158,9 @@ def rotate_image(data, rmatrix, order=4, missing=0.0,):
     pad_y = int(np.max((diff[0], 0)))
 
     new_data = np.pad(data,
-                      ((pad_y, pad_y), (pad_x, pad_x)),
-                      mode='constant',
-                      constant_values=(missing, missing))
+                    ((pad_y, pad_y), (pad_x, pad_x)),
+                    mode='constant',
+                    constant_values=(missing, missing))
 
     # All of the following pixel calculations use a pixel origin of 0
 
@@ -178,7 +191,10 @@ def rotate_image(data, rmatrix, order=4, missing=0.0,):
     return new_data
 
 
-def overlap_arrays(cube, roll_angle=0*u.deg, dispersion_angle=0*u.deg, clip=True):
+def overlap_arrays(cube,
+                   roll_angle=0*u.deg,
+                   dispersion_angle=0*u.deg,
+                   detector_shape=None):
     """
     Flatten intensity cube into an overlappogram such that the first array index direction
     and wavelength directions overlap. 
@@ -201,14 +217,13 @@ def overlap_arrays(cube, roll_angle=0*u.deg, dispersion_angle=0*u.deg, clip=True
         be small as non-zero values mean that information is lost off the edges of the detector.
         A dispersion angle of 0 means that the y-like pixel axis and wavelength are aligned such
         that all dispersion occurs along that pixel axis.
-    clip : `bool`, optional
-        If true, ensure that the dispersion direction has the same shape as the wavelength
-        dimension.
+    detector_shape : `tuple`, optional
+        Shape of the detector specified in number of pixels per row and
+        per column. Defaults to 
     """
     if roll_angle % (360*u.deg) == 0:
         rot_data = cube.data
     else:
-        # The order here is not important
         rmatrix = rotation_matrix(roll_angle)[:2,:2]
         # apply the necessary rotation to every slice in the cube.
         # this is an overly complicated way to do the rotation, but
@@ -231,15 +246,15 @@ def overlap_arrays(cube, roll_angle=0*u.deg, dispersion_angle=0*u.deg, clip=True
             i+shape[1],
         )
         overlappogram += layer
-    if clip:
-        # Clip to desired range
-        # When shape[1] is even, clip_1 == clip_2
-        # When shape[1] is odd, we arbitrarily shift down by a half index at the short wavelength end
-        # and up a half at the long wavelength end such that the latitude/wavelength dimension is 
-        # cropped appropriately.
-        clip_1 = int(np.floor(shape[1]/2))
-        clip_2 = int(np.ceil(shape[1]/2))
-        overlappogram = overlappogram[clip_1:(overlappogram.shape[0]-clip_2),:]
+
+    # Clip to desired range
+    # When shape[1] is even, clip_1 == clip_2
+    # When shape[1] is odd, we arbitrarily shift down by a half index at the short wavelength end
+    # and up a half at the long wavelength end such that the latitude/wavelength dimension is 
+    # cropped appropriately.
+    clip_1 = int(np.floor(shape[1]/2))
+    clip_2 = int(np.ceil(shape[1]/2))
+    overlappogram = overlappogram[clip_1:(overlappogram.shape[0]-clip_2),:]
 
     return overlappogram  * cube.unit
 
@@ -281,21 +296,17 @@ def strided_overlappogram(overlappogram, wave):
     )
 
 
-def make_moxsi_ndcube(data, wavelength, cdelt1=CDELT_SPACE, cdelt2=CDELT_SPACE):
-    cdelt3 = (wavelength[1] - wavelength[0]) / u.pix
-    # Here, assume that the data cube has three dimensions and that
-    # the first dimension corresponds to wavelength, then latitude,
-    # then longitude.
-    moxsi_wcs = {
+def spectral_cube_wcs(shape, wavelength, cdelt, observer):
+    wcs_keys = {
         'CRVAL1': 0, # Assume for now that the sun is at the center of the image.
         'CRVAL2': 0, # Assume for now that the sun is at the center of the image.
-        'CRVAL3': wavelength[0].to('Angstrom').value,
-        'CRPIX1': (data.shape[2] + 1) / 2,
-        'CRPIX2': (data.shape[1] + 1) / 2,
-        'CRPIX3': 1,
-        'CDELT1': cdelt1.to('arcsec / pix').value,
-        'CDELT2': cdelt2.to('arcsec / pix').value,
-        'CDELT3': cdelt3.to('angstrom / pix').value,
+        'CRVAL3': ((wavelength[0] + wavelength[-1])/2).to('angstrom').value,
+        'CRPIX1': (shape[2] + 1) / 2,
+        'CRPIX2': (shape[1] + 1) / 2,
+        'CRPIX3': (shape[0] + 1) / 2,
+        'CDELT1': cdelt[0].to('arcsec / pix').value,
+        'CDELT2': cdelt[1].to('arcsec / pix').value,
+        'CDELT3': cdelt[2].to('angstrom / pix').value,
         'CUNIT1': 'arcsec',
         'CUNIT2': 'arcsec',
         'CUNIT3': 'Angstrom',
@@ -303,16 +314,31 @@ def make_moxsi_ndcube(data, wavelength, cdelt1=CDELT_SPACE, cdelt2=CDELT_SPACE):
         'CTYPE2': 'HPLT-TAN',
         'CTYPE3': 'WAVE',
     }
-    wcs = astropy.wcs.WCS(moxsi_wcs,)
+    if observer is not None:
+        wcs_keys = {**wcs_keys, **hgs_observer_to_keys(observer)}
+    return astropy.wcs.WCS(wcs_keys,)
+
+
+def make_moxsi_ndcube(data,
+                      wavelength,
+                      cdelt1=CDELT_SPACE,
+                      cdelt2=CDELT_SPACE,
+                      cdelt3=CDELT_WAVE,
+                      observer=None):
+    cdelt3 = (wavelength[-1] - wavelength[0]) / (wavelength.shape[0] * u.pix)
+    # Here, assume that the data cube has three dimensions and that
+    # the first dimension corresponds to wavelength, then latitude,
+    # then longitude.
+    wcs = spectral_cube_wcs(data.shape, wavelength, (cdelt1, cdelt2, cdelt3), observer)
     return ndcube.NDCube(data, wcs=wcs, unit=BUNIT)
 
 
-def overlappogram_wcs(shape, wave, cdelt, cunit, pc_matrix, observer):
+def overlappogram_wcs(detector_shape, wave, cdelt, cunit, pc_matrix, observer):
     wcs_keys = {
         'WCSAXES': 3,
-        'NAXIS1': shape[2],
-        'NAXIS2': shape[1],
-        'NAXIS3': shape[0],
+        'NAXIS1': detector_shape[1],
+        'NAXIS2': detector_shape[0],
+        'NAXIS3': wave.shape[0],
         'CDELT1': u.Quantity(cdelt[0], f'{cunit[0]} / pix').to('arcsec / pix').value,
         'CDELT2': u.Quantity(cdelt[1], f'{cunit[1]} / pix').to('arcsec / pix').value,
         'CDELT3': u.Quantity(cdelt[2], f'{cunit[2]} / pix').to('Angstrom / pix').value,
@@ -322,12 +348,12 @@ def overlappogram_wcs(shape, wave, cdelt, cunit, pc_matrix, observer):
         'CTYPE1': 'HPLN-TAN',
         'CTYPE2': 'HPLT-TAN',
         'CTYPE3': 'WAVE',
-        'CRPIX1': (shape[2] + 1)/2,
-        'CRPIX2': (shape[1] + 1)/2,
-        'CRPIX3': (shape[0] + 1)/2,
+        'CRPIX1': (detector_shape[1] + 1)/2,
+        'CRPIX2': (detector_shape[0] + 1)/2,
+        'CRPIX3': 1,#(wave.shape[0] + 1)/2,
         'CRVAL1': 0,
         'CRVAL2': 0,
-        'CRVAL3': ((wave[0] + wave[-1])/2).to('angstrom').value,
+        'CRVAL3': wave[0].to('angstrom').value,
     }
     wcs_keys = {**wcs_keys, **get_pcij_keys(pc_matrix)}
     if observer is not None:
@@ -366,7 +392,7 @@ def construct_overlappogram(cube,
     wave = cube.axis_world_coords(0)[0].to('angstrom')
     moxsi_strided_array = strided_overlappogram(moxsi_array, wave)
     wcs = overlappogram_wcs(
-        moxsi_strided_array.shape,
+        moxsi_strided_array.shape[1:],
         wave,
         cube.wcs.wcs.cdelt,
         cube.wcs.wcs.cunit,
@@ -375,3 +401,63 @@ def construct_overlappogram(cube,
     )
     overlap_cube = ndcube.NDCube(moxsi_strided_array, wcs=wcs)
     return overlap_cube
+
+
+def reproject_to_overlappogram(cube,
+                               detector_shape,
+                               select_slice,
+                               roll_angle=0*u.deg,
+                               dispersion_angle=0*u.deg,
+                               order=1,
+                               observer=None,
+                               sum_over_lambda=True):
+    """_summary_
+
+    Args:
+        cube (_type_): _description_
+        detector_shape (_type_): _description_
+        select_slice (_type_): _description_
+        roll_angle (_type_, optional): _description_. Defaults to 0*u.deg.
+        dispersion_angle (_type_, optional): _description_. Defaults to 0*u.deg.
+        order (int, optional): _description_. Defaults to 1.
+        observer (_type_, optional): _description_. Defaults to None.
+        sum_over_lambda (bool, optional): _description_. Defaults to True.
+
+    Returns:
+        _type_: _description_
+    """
+    wavelength = cube.axis_world_coords(0)[0].to('angstrom')
+    pc_matrix = construct_pcij(roll_angle,
+                               dispersion_angle,
+                               order=order)
+    overlap_wcs = overlappogram_wcs(
+        detector_shape,
+        wavelength,
+        cube.wcs.wcs.cdelt,
+        cube.wcs.wcs.cunit,
+        pc_matrix,
+        observer,
+    )
+
+    offset = select_slice[0].start
+    offset = 0 if offset is None else offset
+    overlap_wcs.wcs.crpix[2] = overlap_wcs.wcs.crpix[2] - offset
+    cube_slice = cube[select_slice]
+
+    overlap_data = reproject.reproject_interp(
+        cube_slice,
+        overlap_wcs,
+        shape_out=cube_slice.data.shape[:1] + detector_shape,
+        return_footprint=False,
+    )
+
+    if sum_over_lambda:
+        isnan = np.where(np.isnan(overlap_data))
+        overlap_data[isnan] = 0.0
+        overlap_data = overlap_data.sum(axis=0)
+        overlap_data = strided_overlappogram(overlap_data, wavelength)
+        # We don't need an offset because the dimensionality of the cube
+        # is the same as wavelength
+        overlap_wcs.wcs.crpix[2] = overlap_wcs.wcs.crpix[2] + offset
+    
+    return ndcube.NDCube(overlap_data, wcs=overlap_wcs)
