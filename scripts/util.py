@@ -13,6 +13,9 @@ CDELT_SPACE = 5.66 * u.arcsec / u.pix
 CDELT_WAVE = 55 * u.milliangstrom / u.pix
 # The units are from Athiray (and the proposal figure)
 BUNIT = 'ph / (pix s)'
+# This comes from the proposal:
+DETECTOR_SHAPE_DISPERSED = (750, 2000)
+DETECTOR_SHAPE_PINHOLE = (750, 475) 
 
 
 def spectral_cube_wcs(shape, wavelength, cdelt, observer):
