@@ -1,0 +1,16 @@
+name: mocksipipeline
+channels:
+- conda-forge
+dependencies:
+- python=3.9
+- pip
+- pip:
+  - ipykernel
+  - ipywidgets
+  - sunpy[all]
+  - reproject
+  - ndcube
+  - aiapy
+  - pfsspy[performance]
+  - hissw
+  - git+git://github.com/wtbarnes/sunkit-dem.git@ndcube-2.0-fixes
