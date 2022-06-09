@@ -13,4 +13,4 @@ dependencies:
   - aiapy
   - pfsspy[performance]
   - hissw
-  - git+git://github.com/wtbarnes/sunkit-dem.git@ndcube-2.0-fixes
+  - git+https://github.com/wtbarnes/sunkit-dem.git@ndcube-2.0-fixes
