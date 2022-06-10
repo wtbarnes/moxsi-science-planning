@@ -56,7 +56,7 @@ def simple_reg_dem(data, errors, exptimes, logt, tresps,
     idTleft = np.diag(np.hstack((1.0/dT, 0)))
     idTright = np.diag(np.hstack((0, 1.0/dT)))
     Bij = ((dTleft+dTright)*2.0 + np.roll(dTright, -1, axis=0) + np.roll(dTleft, 1, axis=0))/6.0
-    
+
     # Matrix mapping coefficents to data
     Rij = np.matmul((tresps*np.outer(nt_ones, exptimes)).T, Bij)
     Dij = idTleft+idTright - np.roll(idTright, -1, axis=0) - np.roll(idTleft, 1, axis=0)
@@ -68,8 +68,8 @@ def simple_reg_dem(data, errors, exptimes, logt, tresps,
     s_mat = np.sum(rvec * ((dat0_mat > 1.0e-2)/errors**2), axis=2) / np.sum((rvec/errors)**2, axis=2)
     s_mat = np.log(s_mat[..., np.newaxis] / nt_ones)
 
-    dems = np.zeros([nx, ny, nt])
-    chi2 = np.zeros([nx, ny]) - 1.0
+    dems = np.zeros((nx, ny, nt))
+    chi2 = np.zeros((nx, ny)) - 1.0
     for i in range(0, nx):
         for j in range(0, ny):
             err = errors[i, j, :]
@@ -82,7 +82,7 @@ def simple_reg_dem(data, errors, exptimes, logt, tresps,
                 amat = np.matmul(mmat.T, mmat) + regmat
                 try:
                     [c, low] = cho_factor(amat)
-                except np.linalg.LinAlgError:
+                except (np.linalg.LinAlgError, ValueError):
                     break
                 c2p = np.mean((dat0-np.dot(Rij, np.exp(s)))**2/err**2)
                 deltas = cho_solve((c, low), np.dot(mmat.T, dat))-s
