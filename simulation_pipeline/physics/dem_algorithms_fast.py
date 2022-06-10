@@ -137,12 +137,15 @@ def simple_reg_dem_numba(data, errors, exptimes, logt, tresps,
         in units of cm^{-5} per unit Log_{10}(T).
     chi2: Array of reduced chi squared values (dimensions n_x by n_y)
     """
-    [nt, nd] = tresps.shape
+    nt, nd = tresps.shape
     nt_ones = np.ones(nt)
-    [nx, ny, nd] = data.shape
-    dT = logt[1:nt]-logt[0:nt-1]
-    [dTleft, dTright] = [np.diag(np.hstack([dT, 0])), np.diag(np.hstack([0, dT]))]
-    [idTleft, idTright] = [np.diag(np.hstack([1.0/dT, 0])), np.diag(np.hstack([0, 1.0/dT]))]
+    nx, ny, nd = data.shape
+    dT = logt[1:nt] - logt[0:nt-1]
+    dTleft = np.diag(np.hstack((dT, 0)))
+    dTright = np.diag(np.hstack((0, dT)))
+
+    idTleft = np.diag(np.hstack((1.0/dT, 0)))
+    idTright = np.diag(np.hstack((0, 1.0/dT)))
     Bij = ((dTleft+dTright)*2.0 + np.roll(dTright, -1, axis=0) + np.roll(dTleft, 1, axis=0))/6.0
     # Matrix mapping coefficents to data
     Rij = np.matmul((tresps*np.outer(nt_ones, exptimes)).T, Bij)
