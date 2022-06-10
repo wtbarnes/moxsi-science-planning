@@ -46,26 +46,35 @@ def simple_reg_dem(data, errors, exptimes, logt, tresps,
         in units of cm^{-5} per unit Log_{10}(T).
     chi2: Array of reduced chi squared values (dimensions n_x by n_y)
     """
-    [nt, nd] = tresps.shape
+    # Setup some values
+    nt, nd = tresps.shape
     nt_ones = np.ones(nt)
-    [nx, ny, nd] = data.shape
-    dT = logt[1:nt]-logt[0:nt-1]
-    [dTleft, dTright] = [np.diag(np.hstack([dT, 0])), np.diag(np.hstack([0, dT]))]
-    [idTleft, idTright] = [np.diag(np.hstack([1.0/dT, 0])), np.diag(np.hstack([0, 1.0/dT]))]
+    nx, ny, nd = data.shape
+    dT = logt[1:nt] - logt[:nt-1]
+    dTleft = np.diag(np.hstack((dT, 0)))
+    dTright = np.diag(np.hstack((0, dT)))
+    idTleft = np.diag(np.hstack((1.0/dT, 0)))
+    idTright = np.diag(np.hstack((0, 1.0/dT)))
     Bij = ((dTleft+dTright)*2.0 + np.roll(dTright, -1, axis=0) + np.roll(dTleft, 1, axis=0))/6.0
+    
     # Matrix mapping coefficents to data
     Rij = np.matmul((tresps*np.outer(nt_ones, exptimes)).T, Bij)
     Dij = idTleft+idTright - np.roll(idTright, -1, axis=0) - np.roll(idTleft, 1, axis=0)
     regmat = Dij*nd/(drv_con**2*(logt[nt-1]-logt[0]))
     rvec = np.sum(Rij, axis=1)
 
+    # Precompute some values before looping over pixels
+    dat0_mat = np.clip(data, 0.0, None)
+    s_mat = np.sum(rvec * ((dat0_mat > 1.0e-2)/errors**2), axis=2) / np.sum((rvec/errors)**2, axis=2)
+    s_mat = np.log(s_mat[..., np.newaxis] / nt_ones)
+
     dems = np.zeros([nx, ny, nt])
     chi2 = np.zeros([nx, ny]) - 1.0
     for i in range(0, nx):
         for j in range(0, ny):
             err = errors[i, j, :]
-            dat0 = np.clip(data[i, j, :], 0.0, None)
-            s = np.log(np.sum((rvec)*((dat0 > 1.0e-2)/err**2))/np.sum((rvec/err)**2)/nt_ones)
+            dat0 = dat0_mat[i, j, :]
+            s = s_mat[i, j, :]
             for k in range(0, kmax):
                 # Correct data by f(s)-s*f'(s)
                 dat = (dat0-np.matmul(Rij, ((1-s)*np.exp(s)))) / err
@@ -73,12 +82,12 @@ def simple_reg_dem(data, errors, exptimes, logt, tresps,
                 amat = np.matmul(mmat.T, mmat) + regmat
                 try:
                     [c, low] = cho_factor(amat)
-                except:
+                except np.linalg.LinAlgError:
                     break
                 c2p = np.mean((dat0-np.dot(Rij, np.exp(s)))**2/err**2)
                 deltas = cho_solve((c, low), np.dot(mmat.T, dat))-s
                 deltas *= np.clip(np.max(np.abs(deltas)), None, 0.5/steps[0])/np.max(np.abs(deltas))
-                ds = 1-2*(c2p < chi2_th) # Direction sign; is chi squared too large or too small?
+                ds = 1-2*(c2p < chi2_th)  # Direction sign; is chi squared too large or too small?
                 c20 = np.mean((dat0-np.dot(Rij, np.exp(s+deltas*ds*steps[0])))**2.0/err**2.0)
                 c21 = np.mean((dat0-np.dot(Rij, np.exp(s+deltas*ds*steps[1])))**2.0/err**2.0)
                 interp_step = ((steps[0]*(c21-chi2_th)+steps[1]*(chi2_th-c20))/(c21-c20))
