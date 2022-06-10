@@ -8,7 +8,10 @@ import numpy as np
 from sunkit_dem import GenericModel
 
 from dem_algorithms import simple_reg_dem, sparse_em_init, sparse_em_solve
-from dem_algorithms_fast import simple_reg_dem_gpu, simple_reg_dem_numba, simple_reg_dem_jax
+try:
+    from dem_algorithms_fast import simple_reg_dem_gpu, simple_reg_dem_numba, simple_reg_dem_jax
+except ImportError:
+    pass
 
 
 @u.quantity_input
