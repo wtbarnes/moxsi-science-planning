@@ -7,7 +7,7 @@ from scipy.interpolate import splrep, splev
 import numpy as np
 from sunkit_dem import GenericModel
 
-from dem_algorithms import simple_reg_dem, sparse_em_init, sparse_em_solve
+from dem_algorithms import simple_reg_dem, simple_reg_dem_gpu, sparse_em_init, sparse_em_solve
 
 
 @u.quantity_input
@@ -51,12 +51,25 @@ class PlowmanModel(GenericModel):
         exp_times = np.array([self.data[k].meta['exptime'] for k in self._keys])
 
         # Solve
-        dem, chi2 = simple_reg_dem(data_array,
-                                   uncertainty_array,
-                                   exp_times,
-                                   logt,
-                                   tresp_array,
-                                   **kwargs)
+        use_gpu = kwargs.pop('use_gpu', False)
+        if use_gpu:
+            dem, chi2 = simple_reg_dem_gpu(
+                data_array,
+                uncertainty_array,
+                exp_times,
+                logt,
+                tresp_array,
+                **kwargs
+            )
+        else:
+            dem, chi2 = simple_reg_dem(
+                data_array,
+                uncertainty_array,
+                exp_times,
+                logt,
+                tresp_array,
+                **kwargs
+            )
 
         # Reshape outputs
         dem_unit = self.data_matrix.unit / self.kernel_matrix.unit / self.temperature_bin_edges.unit / u.Unit('s')
