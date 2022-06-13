@@ -97,10 +97,12 @@ class PlowmanModel(GenericModel):
 
         # Reshape outputs
         data_units = self.data_matrix.unit / exp_unit
-        dem_unit = data_units / self.kernel_matrix.unit / self.temperature_bin_edges.unit 
+        dem_unit = data_units / self.kernel_matrix.unit / self.temperature_bin_edges.unit
+        em = (dem * np.diff(self.temperature_bin_edges)).T * dem_unit
         dem = dem.T * dem_unit
 
         return {'dem': dem,
+                'em': em,
                 'chi_squared': np.atleast_1d(chi2).T,
                 'uncertainty': np.zeros(dem.shape)}
 
@@ -122,7 +124,7 @@ class CheungModel(GenericModel):
         logt_list = len(tr_list) * [np.log10(self.temperature_bin_centers.to_value('K'))]
         data_array = self.data_matrix.to_value().T
         uncertainty_array = np.array([self.data[k].uncertainty.array for k in self._keys]).T
-
+        
         # Call model initializer
         k_basis_int, _, basis_funcs, _ = sparse_em_init(logt_list, tr_list, **init_kwargs)
         # Solve
