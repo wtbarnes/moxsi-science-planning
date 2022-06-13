@@ -20,8 +20,8 @@ DETECTOR_SHAPE_PINHOLE = (750, 475)
 
 def spectral_cube_wcs(shape, wavelength, cdelt, observer):
     wcs_keys = {
-        'CRVAL1': 0, # Assume for now that the sun is at the center of the image.
-        'CRVAL2': 0, # Assume for now that the sun is at the center of the image.
+        'CRVAL1': 0,  # Assume for now that the sun is at the center of the image.
+        'CRVAL2': 0,  # Assume for now that the sun is at the center of the image.
         'CRVAL3': ((wavelength[0] + wavelength[-1])/2).to('angstrom').value,
         'CRPIX1': (shape[2] + 1) / 2,
         'CRPIX2': (shape[1] + 1) / 2,
