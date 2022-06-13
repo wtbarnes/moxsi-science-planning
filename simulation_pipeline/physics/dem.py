@@ -122,7 +122,7 @@ class CheungModel(GenericModel):
         logt_list = len(tr_list) * [np.log10(self.temperature_bin_centers.to_value('K'))]
         data_array = self.data_matrix.to_value().T
         uncertainty_array = np.array([self.data[k].uncertainty.array for k in self._keys]).T
-        
+
         # Call model initializer
         k_basis_int, _, basis_funcs, _ = sparse_em_init(logt_list, tr_list, **init_kwargs)
         # Solve
