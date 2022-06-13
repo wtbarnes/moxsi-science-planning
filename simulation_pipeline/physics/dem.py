@@ -48,10 +48,12 @@ class PlowmanModel(GenericModel):
 
     def _model(self, **kwargs):
         # Reshape some of the data
-        data_array = self.data_matrix.to_value('ct').T
+        data_array = self.data_matrix.to_value('ct pix-1').T
         uncertainty_array = np.array([self.data[k].uncertainty.array for k in self._keys]).T
         tresp_array = self.kernel_matrix.to_value('cm^5 ct pix-1 s-1').T
         logt = self.temperature_bin_centers.to_value('K')
+        # Assume exposure times
+        exp_unit = u.Unit('s')
         exp_times = np.array([self.data[k].meta['exptime'] for k in self._keys])
 
         # Solve
@@ -94,7 +96,8 @@ class PlowmanModel(GenericModel):
             )
 
         # Reshape outputs
-        dem_unit = self.data_matrix.unit / self.kernel_matrix.unit / self.temperature_bin_edges.unit / u.Unit('s')
+        data_units = self.data_matrix.unit / exp_unit
+        dem_unit = data_units / self.kernel_matrix.unit / self.temperature_bin_edges.unit 
         dem = dem.T * dem_unit
 
         return {'dem': dem,
