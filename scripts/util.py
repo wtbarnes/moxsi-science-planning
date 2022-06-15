@@ -15,7 +15,7 @@ CDELT_WAVE = 55 * u.milliangstrom / u.pix
 BUNIT = 'ph / (pix s)'
 # This comes from the proposal:
 DETECTOR_SHAPE_DISPERSED = (750, 2000)
-DETECTOR_SHAPE_PINHOLE = (750, 475) 
+DETECTOR_SHAPE_PINHOLE = (750, 475)
 
 
 def spectral_cube_wcs(shape, wavelength, cdelt, observer):

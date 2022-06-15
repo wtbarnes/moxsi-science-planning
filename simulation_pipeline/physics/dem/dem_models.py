@@ -15,8 +15,8 @@ except ImportError:
 
 
 @u.quantity_input
-def get_aia_temperature_response(channels, temperature_bin_centers: u.K):
-    with asdf.open('../data/aia_temperature_response.asdf', 'r') as af:
+def get_aia_temperature_response(filename, channels, temperature_bin_centers: u.K,):
+    with asdf.open(filename, 'r') as af:
         _TEMPERATURE_RESPONSE = af.tree
     response = {}
     T = _TEMPERATURE_RESPONSE['temperature']
@@ -28,8 +28,9 @@ def get_aia_temperature_response(channels, temperature_bin_centers: u.K):
 
 
 @u.quantity_input
-def get_xrt_temperature_response(channels, temperature_bin_centers: u.K, correction_factor=1):
-    with asdf.open('../data/xrt_temperature_response.asdf', 'r') as af:
+def get_xrt_temperature_response(filename, channels, temperature_bin_centers: u.K,
+                                 correction_factor=1):
+    with asdf.open(filename, 'r') as af:
         _TEMPERATURE_RESPONSE = af.tree
     response = {}
     T = _TEMPERATURE_RESPONSE['temperature']
@@ -119,12 +120,13 @@ class CheungModel(GenericModel):
         solve_kwargs = {} if solve_kwargs is None else solve_kwargs
 
         # Reshape some of the data
+        exp_unit = u.Unit('s')
         exp_times = np.array([self.data[k].meta['exptime'] for k in self._keys])
         tr_list = self.kernel_matrix.to_value('cm^5 ct / (pix s)')
         logt_list = len(tr_list) * [np.log10(self.temperature_bin_centers.to_value('K'))]
         data_array = self.data_matrix.to_value().T
         uncertainty_array = np.array([self.data[k].uncertainty.array for k in self._keys]).T
-        
+
         # Call model initializer
         k_basis_int, _, basis_funcs, _ = sparse_em_init(logt_list, tr_list, **init_kwargs)
         # Solve
@@ -137,13 +139,17 @@ class CheungModel(GenericModel):
         # Compute product between coefficients and basis functions
         # NOTE: I am assuming that all basis functions are computed on the same temperature
         # array defined by temperature_bin_centers
-        dem = np.tensordot(coeffs, basis_funcs, axes=(2, 0))
+        # TODO: Need to verify that the cheung method returns per deltalogT
+        delta_logT = np.diff(np.log10(self.temperature_bin_edges.to_value('K')))
+        em = np.tensordot(coeffs, basis_funcs, axes=(2, 0)) * delta_logT
 
         # Reshape outputs
-        dem_unit = self.data_matrix.unit / self.kernel_matrix.unit / self.temperature_bin_edges.unit
-        dem = dem.T * dem_unit
+        data_units = self.data_matrix.unit / exp_unit
+        em = u.Quantity(em.T, data_units / self.kernel_matrix.unit)
+        dem = (em.T / np.diff(self.temperature_bin_edges)).T
 
         return {'dem': dem,
+                'em': em,
                 'uncertainty': np.zeros(dem.shape)}
 
     def defines_model_for(self, *args, **kwargs):
