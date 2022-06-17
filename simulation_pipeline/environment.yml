@@ -9,10 +9,10 @@ dependencies:
   - ipywidgets
   - sunpy[all]
   - asdf
-  - reproject
   - ndcube
   - aiapy
   - pfsspy[performance]
   - hissw
+  - git+https://github.com/astropy/reproject.git@main
   - git+https://github.com/wtbarnes/overlappy.git@main
   - git+https://github.com/wtbarnes/sunkit-dem.git@ndcube-2.0-fixes
