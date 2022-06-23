@@ -1,4 +1,5 @@
 data/
+output/
 docs/
 *.mp4
 *.fits
