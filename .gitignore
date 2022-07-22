@@ -4,6 +4,8 @@ docs/
 *.mp4
 *.fits
 *.asdf
+*.png
+*.gif
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
