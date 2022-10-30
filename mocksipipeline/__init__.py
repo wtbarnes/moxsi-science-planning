@@ -1,6 +1,10 @@
 """
 Package for running the MOXSI simulator pipeline
 """
+import logging 
+
+
+logger = logging.getLogger('mocksipipeline')
 
 
 class MockSiPipeline:

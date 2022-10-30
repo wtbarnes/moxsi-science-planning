@@ -5,6 +5,8 @@ import astropy.io.fits
 from astropy.wcs import WCS
 from ndcube import NDCube
 
+__all__ = ['read_data_cube']
+
 
 def read_data_cube(filename, hdu=0):
     """
