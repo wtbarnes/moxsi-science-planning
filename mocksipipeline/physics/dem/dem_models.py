@@ -2,47 +2,16 @@
 DEM models and utilities
 """
 import astropy.units as u
-import asdf
-from scipy.interpolate import splrep, splev
 import numpy as np
 from sunkit_dem import GenericModel
 
-from dem_algorithms import simple_reg_dem, sparse_em_init, sparse_em_solve, dn2dem_pos
+from .dem_algorithms import simple_reg_dem, sparse_em_init, sparse_em_solve, dn2dem_pos
 try:
-    from dem_algorithms_fast import simple_reg_dem_gpu, simple_reg_dem_numba, simple_reg_dem_jax
+    from .dem_algorithms_fast import simple_reg_dem_gpu, simple_reg_dem_numba, simple_reg_dem_jax
 except ImportError:
     pass
 
-
-@u.quantity_input
-def get_aia_temperature_response(filename, channels, temperature_bin_centers: u.K,):
-    with asdf.open(filename, 'r') as af:
-        _TEMPERATURE_RESPONSE = af.tree
-    response = {}
-    T = _TEMPERATURE_RESPONSE['temperature']
-    for c in channels:
-        K = _TEMPERATURE_RESPONSE[f'{c.to_value("Angstrom"):.0f}']
-        nots = splrep(T.value, K.value)
-        response[str(c)] = u.Quantity(splev(temperature_bin_centers.value, nots), K.unit)
-    return response
-
-
-@u.quantity_input
-def get_xrt_temperature_response(filename, channels, temperature_bin_centers: u.K,
-                                 correction_factor=1):
-    with asdf.open(filename, 'r') as af:
-        _TEMPERATURE_RESPONSE = af.tree
-    response = {}
-    T = _TEMPERATURE_RESPONSE['temperature']
-    for c in channels:
-        K = _TEMPERATURE_RESPONSE[c]['response']
-        nots = splrep(T.value, K.value)
-        fw1 = ' '.join(_TEMPERATURE_RESPONSE[c]['filter_wheel_1'].capitalize().split('_'))
-        fw2 = ' '.join(_TEMPERATURE_RESPONSE[c]['filter_wheel_2'].capitalize().split('_'))
-        key = f'{fw1}-{fw2}'
-        response[key] = u.Quantity(
-            splev(temperature_bin_centers.value, nots), K.unit) * correction_factor
-    return response
+__all__ = ['HK12Model', 'PlowmanModel', 'CheungModel']
 
 
 class PlowmanModel(GenericModel):
