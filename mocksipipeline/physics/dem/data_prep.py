@@ -25,13 +25,13 @@ from mocksipipeline.physics.dem import DemModel
 
 class DataPrep(DemModel):
 
-    def __init__(self, map_list=None, aia_correction_table=None, 
+    def __init__(self, *args, map_list=None, aia_correction_table=None, 
                  aia_error_table=None, aia_pointing_table=None, **kwargs):
         self.map_list = map_list
         self.aia_correction_table = aia_correction_table
         self.aia_error_table = aia_error_table
         self.aia_pointing_table = aia_pointing_table
-        super().__init__(**kwargs)
+        super().__init__(*args, **kwargs)
 
     @property
     def collection(self):
@@ -138,10 +138,10 @@ class DataPrep(DemModel):
 
 class DataQuery(DataPrep):
 
-    def __init__(self, data_directory, obstime, **kwargs):
+    def __init__(self, data_directory, obstime, *args, **kwargs):
         self.data_directory = data_directory
         self.obstime = obstime
-        super().__init__(**kwargs)
+        super().__init__(*args, **kwargs)
 
     @property
     def map_list(self):
