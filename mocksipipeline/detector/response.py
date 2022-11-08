@@ -69,7 +69,7 @@ def convolve_with_response(cube, channel, include_gain=True):
     # Reset the units if they were in the metadata
     meta.pop('BUNIT', None)
 
-    # Constuct new WCS for the modified wavelength axis
+    # Construct new WCS for the modified wavelength axis
     new_wcs = extend_celestial_wcs(cube[0].wcs.low_level_wcs,
                                    channel.wavelength,
                                    'wavelength',
