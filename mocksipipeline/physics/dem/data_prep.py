@@ -2,7 +2,6 @@
 Components for preparing data for DEM inversion
 """
 import os
-from weakref import ref
 
 import aiapy.calibrate
 import astropy.units as u

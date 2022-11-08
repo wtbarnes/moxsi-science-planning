@@ -6,6 +6,7 @@ import jax
 from jax.scipy.linalg import cho_factor, cho_solve
 import jax.numpy as jnp
 
+
 def simple_reg_dem_gpu(data, errors, exptimes, logt, tresps,
                        kmax=100, kcon=5, steps=[0.1, 0.5], drv_con=8.0, chi2_th=1.0, tol=0.1):
     data = cp.array(data)
@@ -114,6 +115,7 @@ def simple_reg_dem_numba(data, errors, exptimes, logt, tresps,
             dems[i, j, :] = np.exp(s)
 
     return dems, chi2
+
 
 @jax.jit
 def simple_reg_dem_jax(data, errors, exptimes, logt, tresps,

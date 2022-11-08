@@ -20,12 +20,17 @@ class SpectralModel:
         else:
             self.spectral_table = read_spectral_table(spectral_table)
 
+    def run(self, dem_cube):
+        # This should take in a DEM cube and multiply it with a spectral
+        # table to produce a spectral cube
+        ...
+
     @staticmethod
     def build_spectral_table(**kwargs):
         """
         Build the spectral table with some sensible defaults for MOXSI
         """
-        temperature = kwargs.pop('temperature', np.arange(5.5, 7.6, 0.1)*u.K)
+        temperature = kwargs.pop('temperature', 10**np.arange(5.5, 7.6, 0.1)*u.K)
         density = kwargs.pop('density', None)
         if density is None:
             # Assume constant pressure
