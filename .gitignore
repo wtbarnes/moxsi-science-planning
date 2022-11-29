@@ -6,6 +6,7 @@ docs/
 *.asdf
 *.png
 *.gif
+*.pdf
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
