@@ -68,12 +68,12 @@ if __name__ == '__main__':
         (al_poly_thin_oxide, True),
         (al_poly_thick_oxide, True),
     ]
-    for tff,au_cr in filter_list:
+    for tff, au_cr in filter_list:
         # Build overlappogram for each spectral order
         spectral_orders = [-3, -1, 0, 1, 3]
         for order in spectral_orders:
             # Set up channel
-            chan = SpectrogramChannel(order, tff)
+            chan = SpectrogramChannel(order, tff, include_au_cr=au_cr)
             # Setup directory structure and filenames
             dir_name = ''.join(chan.filter_label.split(' '))
             dir_name = '_'.join(dir_name.split(','))
