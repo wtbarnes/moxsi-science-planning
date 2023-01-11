@@ -20,7 +20,7 @@ from mocksipipeline.physics.spectral import SpectralModel
 from mocksipipeline.detector.filter import ThinFilmFilter
 from mocksipipeline.detector.component import DispersedComponent
 
-DASK_CLUSTER = ""  # start your cluster and get this address
+DASK_CLUSTER = "tcp://127.0.0.1:36785"  # start your cluster and get this address
 ROOT_DIR = '/home/ubuntu/pipeline-runs/'
 
 
