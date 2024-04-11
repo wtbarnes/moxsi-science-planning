@@ -15,5 +15,4 @@ sphinx:
 conda:
   environment: .rtd-environment.yml
 
-formats:
-- pdf
+formats: []
