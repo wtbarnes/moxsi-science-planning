@@ -8,7 +8,7 @@ from synthesizAR.atomic.idl import compute_spectral_table, write_spectral_table
 from synthesizAR import log
 log.setLevel('DEBUG')
 
-from mocksipipeline.physics.spectral import get_spectral_tables
+from mocksipipeline.spectral import get_spectral_tables
 
 
 # Move this somewhere more useful?
@@ -45,7 +45,7 @@ if __name__ == '__main__':
     # 2. photospheric abundances
     # 3. unity abundances, separated by element (effectively abundance free)
     
-    SPEC_DIR = '/Users/wtbarnes/Documents/codes/mocksipipeline/mocksipipeline/physics/spectral/data/ions'
+    SPEC_DIR = '/Users/wtbarnes/Documents/codes/mocksipipeline/mocksipipeline/physics/spectral/data/'
     
     # Read the various components from it
     temperature = 10**np.arange(5, 8, 0.05) * u.K
@@ -53,45 +53,46 @@ if __name__ == '__main__':
     density = constant_pressure / temperature
     wave_min = 0.1 * u.Angstrom
     wave_max = 500 * u.Angstrom
-    delta_wave = 55 * u.milliangstrom
+    delta_wave = 71.8 * u.milliangstrom / 8
     
     # Get list of all ions
     ion_catalogue = list_all_ions(sort_by_element=False)
 
     # Generate spectra for each element
-    for k in ion_catalogue:
-        spec_table = compute_spectral_table(
-            temperature=temperature,
-            density=density,
-            wave_min=wave_min,
-            wave_max=wave_max,
-            delta_wave=delta_wave,
-            ioneq_filename='chianti.ioneq',
-            abundance_filename='unity.abund',  # independent of abundance
-            include_continuum=False,
-            use_lookup_table=True,
-            include_all_lines=True,
-            ion_list=[k],
-        )
-        filename = os.path.join(SPEC_DIR, f'chianti-spectrum-{k}.asdf')
-        write_spectral_table(filename, spec_table)
+    # for k in ion_catalogue:
+    #     spec_table = compute_spectral_table(
+    #         temperature=temperature,
+    #         density=density,
+    #         wave_min=wave_min,
+    #         wave_max=wave_max,
+    #         delta_wave=delta_wave,
+    #         ioneq_filename='chianti.ioneq',
+    #         abundance_filename='unity.abund',  # independent of abundance
+    #         include_continuum=False,
+    #         use_lookup_table=True,
+    #         include_all_lines=True,
+    #         ion_list=[k],
+    #     )
+    #     filename = os.path.join(SPEC_DIR, f'chianti-spectrum-{k}.asdf')
+    #     write_spectral_table(filename, spec_table)
         
     # Generate spectra for coronal abundances
-    #spec_table = compute_spectral_table(
-    #    temperature=temperature,
-    #    density=density,
-    #    wave_min=wave_min,
-    #    wave_max=wave_max,
-    #    delta_wave=delta_wave,
-    #    ioneq_filename='chianti.ioneq',
-    #    abundance_filename='sun_coronal_1992_feldman_ext.abund',
-    #    include_continuum=True,
-    #    use_lookup_table=True,
-    #    include_all_lines=True,
-    #)
+    spec_table = compute_spectral_table(
+        temperature=temperature,
+        density=density,
+        wave_min=wave_min,
+        wave_max=wave_max,
+        delta_wave=delta_wave,
+        ioneq_filename='chianti.ioneq',
+        abundance_filename='sun_coronal_1992_feldman_ext.abund',
+        include_continuum=False,
+        use_lookup_table=True,
+        include_all_lines=True,
+        ion_list=[i for _,v in ion_catalogue.items() for i in v]
+    )
     #filename = os.path.join(SPEC_DIR, f'chianti-spectrum-coronal.asdf')
     #write_spectral_table(filename, spec_table)
-    #
+    
     ## Generate spectra for photospheric abundances
     #spec_table = compute_spectral_table(
     #    temperature=temperature,
