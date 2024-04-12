@@ -1,0 +1,116 @@
+\documentclass
+$if(aastexopts)$
+[
+$for(aastexopts)$
+ $aastexopts$,
+$endfor$
+]
+$endif$
+{aastex631}
+
+$if(bibstyle)$
+\bibliographystyle{$bibstyle$}
+$endif$
+
+\usepackage{booktabs}
+
+$if(texpackages)$
+$for(texpackages)$
+\usepackage
+$if(opts)$
+[
+$for(opts)$
+$opts$,
+$endfor$
+]
+$endif$
+{$texpackages.name$}
+$endfor$
+$endif$
+
+$if(preambleinput)$
+$for(preambleinput)$
+\input{$preambleinput$}
+$endfor$
+$endif$
+
+$if(received)$
+\received{$received$}
+$endif$
+
+$if(revised)$
+\revised{$revised$}
+$endif$
+
+$if(accepted)$
+\accepted{$accepted$}
+$endif$
+
+$if(submitjournal)$
+\submitjournal{$submitjournal$}
+$endif$
+
+\begin{document}
+
+\title{$title$}
+
+$for(author)$
+\author
+    $if(author.ORCID)$
+        [$author.ORCID$]
+    $endif$
+    {$author.name$}
+    $if(author.affiliation)$
+        $for(author.affiliation)$
+            \affiliation{$author.affiliation$}
+        $endfor$
+    $endif$
+    $if(author.collaboration)$
+        $for(author.collaboration)$
+            \collaboration{$author.collaboration$}
+        $endfor$
+    $endif$
+    $if(author.nocollaboration)$
+    \nocollaboration
+    $endif$
+$endfor$
+
+$if(keywords)$
+    \keywords{
+    $for(keywords)$
+        $keywords$ --- 
+    $endfor$
+    }
+$endif$
+
+$if(abstract)$
+\begin{abstract}
+$abstract$
+\end{abstract}
+$endif$
+
+$body$
+
+$if(software)$
+\software{
+$for(software)$
+$software$,
+$endfor$
+}
+$endif$
+
+$if(facility)$
+\facility{
+$for(facility)$
+$facility$,
+$endfor$
+}
+$endif$
+
+$if(bibliography)$
+$for(bibliography)$
+\bibliography{$bibliography$}
+$endfor$
+$endif$
+
+\end{document}
