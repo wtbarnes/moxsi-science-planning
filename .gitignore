@@ -6,6 +6,7 @@ output/
 *.png
 *.gif
 *.pdf
+*.nc
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
