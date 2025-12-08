@@ -1,11 +1,15 @@
 data/
 output/
+*figure-revealjs/
+*libs/
+*.html
 *.mp4
 *.fits
 *.asdf
 *.png
 *.gif
 *.pdf
+*.jpg
 *.nc
 
 # Byte-compiled / optimized / DLL files
