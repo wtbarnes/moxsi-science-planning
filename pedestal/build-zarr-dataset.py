@@ -46,7 +46,7 @@ if __name__ == '__main__':
         'DET0TEMP', 'DET1TEMP', 'THERMADC', 'FPGATEMP', 'EXPTIME', 'DATE', 'FRAME_ID'
     ]
     meta_arrays = {k: [] for k in meta_keys}
-    for i,filename in enumerate(tqdm.tqdm(all_fits_files)):
+    for i, filename in enumerate(tqdm.tqdm(all_fits_files)):
         with astropy.io.fits.open(filename, memmap=False) as hdul:
             _header = hdul[0].header
             data[i,...] = hdul[0].data[:2000,:]  #disregard extra row
@@ -55,7 +55,7 @@ if __name__ == '__main__':
     time_coord = pandas.to_datetime(meta_arrays['DATE'])
     data = dask.array.from_array(
         data,
-        chunks=(None, data.shape[1]//10, data.shape[2]//10)
+        chunks=(None, data.shape[1]//20, data.shape[2]//15)
     )
     ds = xarray.Dataset(
         {
@@ -93,4 +93,4 @@ if __name__ == '__main__':
         ds[f'temperature_{k}'].attrs['unit'] = 'deg C'
     ds['exposure_time'].attrs['unit'] = 'ms'
     # Write out the Zarr dataset
-    ds.to_zarr(data_dir / 'images.zarr')
+    ds.to_zarr(data_dir / 'images.zarr', mode='w')
