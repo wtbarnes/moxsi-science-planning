@@ -9,7 +9,7 @@ import xarray
 
 CLIENT_ADDRESS = 'tcp://127.0.0.1:33767'
 
-OUTPUT_FILENAME = 'fit_coefficients_ade_fixed_f_subzero.nc'
+OUTPUT_FILENAME = 'fit_coefficients_a_fixed_f_subzero.nc'
 
 # This is the full fitting function. Adapt it below as needed.
 #def fitting_function(X, a, b, c, d, e, f):
@@ -68,9 +68,9 @@ if __name__ == '__main__':
     for fd, fe in zip(f_divisions, f_fixed_estimate):
         print(fd)
 
-        def fitting_function_fixed_f(X, a, d, e):
+        def fitting_function_fixed_f(X, a):
             t_det0, t_adc, exposure = X
-            return a + d * t_det0 + e * t_det0**2 + fe * t_adc
+            return a + fe * t_adc
         
         da_fit = data_to_fit[:, :, fd[0]:fd[1]].curvefit(
             (ds.temperature_detector_0, ds.temperature_adc, ds.exposure_time),
