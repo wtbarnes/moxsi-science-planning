@@ -9,7 +9,7 @@ import xarray
 
 CLIENT_ADDRESS = 'tcp://127.0.0.1:33767'
 
-OUTPUT_FILENAME = 'fit_coefficients_a_fixed_f_subzero.nc'
+OUTPUT_FILENAME = 'fit_coefficients_a_fixed_bcdef_all_temperatures.nc'
 
 # This is the full fitting function. Adapt it below as needed.
 #def fitting_function(X, a, b, c, d, e, f):
@@ -37,8 +37,8 @@ if __name__ == '__main__':
     #                                    dark_frames.time<time_lims[-1]))[0]
     # )
     # Select only the frames corresponding to a detector temperature <0
-    idx = np.where(np.logical_and(ds.temperature_detector_0 < 0, ds.temperature_detector_1 < 0))
-    ds = ds.isel(sample=idx[0])
+    #idx = np.where(np.logical_and(ds.temperature_detector_0 < 0, ds.temperature_detector_1 < 0))
+    #ds = ds.isel(sample=idx[0])
     # Fit data
     #array_slice = np.s_[:,:,:]  # Make this smaller for easy testing
     data_to_fit = ds['data'] #[array_slice]
@@ -64,13 +64,28 @@ if __name__ == '__main__':
         2.2667223450191125,
         0.9512635133522603,
     ]
+    # I found this by fititng a Gaussian to the distribution of d values for the case in which I 
+    # allowed a and d (only) to vary and fixed f across the four taps.
+    # d_fixed = 2.288023013652479
+    # I found these values by fitting a Gaussian to the distribution of parameter values for the
+    # case in which I allowed all of the parameters to vary for the full range of temperatures.
+    params_fixed_estimate = {
+        'b': np.float64(0.0048736182432977115),
+        'c': np.float64(7.047611800096444),
+        'd': np.float64(2.4490954061290844),
+        'e': np.float64(0.01927927292177515),
+    }
     coeff_arrays = []
     for fd, fe in zip(f_divisions, f_fixed_estimate):
         print(fd)
 
         def fitting_function_fixed_f(X, a):
             t_det0, t_adc, exposure = X
-            return a + fe * t_adc
+            return (a + 
+                    params_fixed_estimate['b'] * exposure * np.exp(t_det0 / params_fixed_estimate['c']) +
+                    params_fixed_estimate['d'] * t_det0 +
+                    params_fixed_estimate['e'] * t_det0**2 +
+                    fe * t_adc)
         
         da_fit = data_to_fit[:, :, fd[0]:fd[1]].curvefit(
             (ds.temperature_detector_0, ds.temperature_adc, ds.exposure_time),
@@ -81,7 +96,12 @@ if __name__ == '__main__':
         _coeff_array = da_fit.curvefit_coefficients.compute()
         # NOTE: This saves the constant f value per segment in the same array for convenience
         _const_f = xarray.ones_like(_coeff_array[...,:1]).assign_coords(param=['f'])*fe
-        coeff_arrays.append(xarray.concat([_coeff_array, _const_f], dim='param'))
+        # NOTE: This saves the constant parameter value per segment in the same array for convenience
+        _const_coeffs = []
+        for p in params_fixed_estimate:
+            _const_coeffs.append(xarray.ones_like(_coeff_array[...,:1]).assign_coords(param=[p])*params_fixed_estimate[p])
+        _const_coeffs += [_const_f]
+        coeff_arrays.append(xarray.concat([_coeff_array,]+_const_coeffs, dim='param'))
     # Save out fit coefficients
     coeff_arrays = xarray.concat(coeff_arrays, dim='column')
     coeff_arrays.to_netcdf(data_dir / OUTPUT_FILENAME)
