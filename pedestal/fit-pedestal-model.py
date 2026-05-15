@@ -7,9 +7,9 @@ import distributed
 import numpy as np
 import xarray
 
-CLIENT_ADDRESS = 'tcp://127.0.0.1:33767'
+CLIENT_ADDRESS = 'tcp://127.0.0.1:40259'
 
-OUTPUT_FILENAME = 'fit_coefficients_a_fixed_bcdef_all_temperatures.nc'
+OUTPUT_FILENAME = 'fit_coefficients_full_abovezero.nc'
 
 # This is the full fitting function. Adapt it below as needed.
 #def fitting_function(X, a, b, c, d, e, f):
@@ -36,8 +36,8 @@ if __name__ == '__main__':
     #     sample=np.where(np.logical_and(dark_frames.time>time_lims[0],
     #                                    dark_frames.time<time_lims[-1]))[0]
     # )
-    # Select only the frames corresponding to a detector temperature <0
-    #idx = np.where(np.logical_and(ds.temperature_detector_0 < 0, ds.temperature_detector_1 < 0))
+    # Select only the frames corresponding to a detector temperature > 0
+    idx = np.where(np.logical_and(ds.temperature_detector_0 > 0, ds.temperature_detector_1 > 0))
     #ds = ds.isel(sample=idx[0])
     # Fit data
     #array_slice = np.s_[:,:,:]  # Make this smaller for easy testing
@@ -70,21 +70,21 @@ if __name__ == '__main__':
     # I found these values by fitting a Gaussian to the distribution of parameter values for the
     # case in which I allowed all of the parameters to vary for the full range of temperatures.
     params_fixed_estimate = {
-        'b': np.float64(0.0048736182432977115),
-        'c': np.float64(7.047611800096444),
-        'd': np.float64(2.4490954061290844),
-        'e': np.float64(0.01927927292177515),
+    #    'b': np.float64(0.0048736182432977115),
+    #    'c': np.float64(7.047611800096444),
+    #    'd': np.float64(2.4490954061290844),
+    #    'e': np.float64(0.01927927292177515),
     }
     coeff_arrays = []
     for fd, fe in zip(f_divisions, f_fixed_estimate):
         print(fd)
 
-        def fitting_function_fixed_f(X, a):
+        def fitting_function_fixed_f(X, a, b, c, d, e):
             t_det0, t_adc, exposure = X
             return (a + 
-                    params_fixed_estimate['b'] * exposure * np.exp(t_det0 / params_fixed_estimate['c']) +
-                    params_fixed_estimate['d'] * t_det0 +
-                    params_fixed_estimate['e'] * t_det0**2 +
+                    b * exposure * np.exp(t_det0 / c) +
+                    d* t_det0 +
+                    e * t_det0**2 +
                     fe * t_adc)
         
         da_fit = data_to_fit[:, :, fd[0]:fd[1]].curvefit(
