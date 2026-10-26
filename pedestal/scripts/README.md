@@ -1,0 +1,2 @@
+Files in this folder are for actually running the pedestal data prep and fitting model for different datasets.
+If functions are sufficiently generic, they should pulled into files outside of this directory.
