@@ -10,8 +10,12 @@ import pandas
 import tqdm
 import xarray
 
+MOXSI_DETECTOR_SHAPE = (2000, 1504)
 
-def steinharthart(coeff, scale=False):
+__all__ = ['list_of_files_to_ds']
+
+
+def _steinharthart(coeff, scale=False):
     # scale=True is for "det0", which is the detector temperature
     def func(dn):
         r = dn / (4096 - dn)
@@ -23,45 +27,42 @@ def steinharthart(coeff, scale=False):
 
 
 # These are the Steinhart-Hart functions, which we will use
-det0temp_sh = steinharthart([1.1292E-03, 2.3411E-04, 0.0000E+00, 8.7755E-08], scale=True)
-det1temp_sh = steinharthart([3.3540E-03, 2.5708E-04, 1.8939E-06, 1.8973E-07])
-fpgatemp_sh = steinharthart([3.3540E-03, 2.5708E-04, 1.8939E-06, 1.8973E-07])
-thermadc_sh = steinharthart([3.3540E-03, 3.0013E-04, 5.0852E-06, 2.1877E-07])
+det0temp_sh = _steinharthart([1.1292E-03, 2.3411E-04, 0.0000E+00, 8.7755E-08], scale=True)
+det1temp_sh = _steinharthart([3.3540E-03, 2.5708E-04, 1.8939E-06, 1.8973E-07])
+fpgatemp_sh = _steinharthart([3.3540E-03, 2.5708E-04, 1.8939E-06, 1.8973E-07])
+thermadc_sh = _steinharthart([3.3540E-03, 3.0013E-04, 5.0852E-06, 2.1877E-07])
 
 
-if __name__ == '__main__':
-    # Get all filenames
-    data_dir = pathlib.Path('../data/moxsi_gsfc_calibration_images/')
-    all_fits_files = sorted(data_dir.glob('csie_image_*.bin.fits'))
-    # Skip the first file due to uncertainty in the true exposure time
-    all_fits_files = all_fits_files[1:]
+def list_of_files_to_ds(filenames, chunk_shape=None):
+    """
+    Transform a list of MOXSI FITS files to a single xarray DataSet
+
+    Parameters
+    ----------
+    filenames
+    """
     # Build dataset
-    data = np.empty((len(all_fits_files),2000,1504))
-    temp_det_1 = []
-    temp_det_0 = []
-    temp_adc = []
-    exposure_time = []
-    time = []
+    data = np.empty((len(filenames),)+MOXSI_DETECTOR_SHAPE)
     meta_keys = [
         'DET0TEMP', 'DET1TEMP', 'THERMADC', 'FPGATEMP', 'EXPTIME', 'DATE', 'FRAME_ID'
     ]
     meta_arrays = {k: [] for k in meta_keys}
-    for i, filename in enumerate(tqdm.tqdm(all_fits_files)):
+    for i, filename in enumerate(tqdm.tqdm(filenames)):
         with astropy.io.fits.open(filename, memmap=False) as hdul:
             _header = hdul[0].header
-            data[i,...] = hdul[0].data[:2000,:]  #disregard extra row
+            data[i,...] = hdul[0].data[:MOXSI_DETECTOR_SHAPE[0], :MOXSI_DETECTOR_SHAPE[1]]  #trim extra rows/columns
         for k in meta_arrays.keys():
             meta_arrays[k].append(_header[k])
     time_coord = pandas.to_datetime(meta_arrays['DATE'])
+    if chunk_shape is None:
+        # NOTE: These chunk sizes are somewhat arbitrary, but seem to work fairly well for this detector shape
+        chunk_shape = (data.shape[1]//20, data.shape[2]//15)
     data = dask.array.from_array(
         data,
-        chunks=(None, data.shape[1]//20, data.shape[2]//15)
+        chunks=(None,)+chunk_shape
     )
     ds = xarray.Dataset(
-        {
-            'data': (["sample", "row", "column"], data),
-
-        },
+        {'data': (["sample", "row", "column"], data),},
         coords={
             "time": (["sample"], time_coord),
             "frame_id": (["sample"], np.array(meta_arrays['FRAME_ID'])),
@@ -77,6 +78,21 @@ if __name__ == '__main__':
     ds['temperature_detector_1'].data = det1temp_sh(ds['temperature_detector_1'])
     ds['temperature_adc'].data = thermadc_sh(ds['temperature_adc'])
     ds['temperature_fpga'].data = fpgatemp_sh(ds['temperature_fpga'])
+    # Add unit information
+    ds['data'].attrs['unit'] = 'DN'
+    for k in ['detector_0', 'detector_1', 'adc', 'fpga']:
+        ds[f'temperature_{k}'].attrs['unit'] = 'deg C'
+    ds['exposure_time'].attrs['unit'] = 'ms'
+    return ds
+
+
+if __name__ == '__main__':
+    # Get all filenames
+    data_dir = pathlib.Path('../data/moxsi_gsfc_calibration_images/')
+    all_fits_files = sorted(data_dir.glob('csie_image_*.bin.fits'))
+    # Skip the first file due to uncertainty in the true exposure time
+    all_fits_files = all_fits_files[1:]
+    ds = list_of_files_to_ds(all_fits_files)
     # Correct exposure time
     exptime_fixed = np.empty_like(ds['exposure_time'].data)
     exptime_fixed[:414] = np.where(ds['exposure_time'].data[:414] == 1250, 5000, 1250)
@@ -87,10 +103,5 @@ if __name__ == '__main__':
     )
     exptime_fixed[614] = 5000  # this single image needs to be separately fixed
     ds['exposure_time'].data = exptime_fixed
-    # Add unit information
-    ds['data'].attrs['unit'] = 'DN'
-    for k in ['detector_0', 'detector_1', 'adc', 'fpga']:
-        ds[f'temperature_{k}'].attrs['unit'] = 'deg C'
-    ds['exposure_time'].attrs['unit'] = 'ms'
     # Write out the Zarr dataset
     ds.to_zarr(data_dir / 'images.zarr', mode='w')
