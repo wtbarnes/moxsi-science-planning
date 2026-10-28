@@ -11,6 +11,8 @@ output/
 *.pdf
 *.jpg
 *.nc
+calibration/tables/
+science-meetings/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
