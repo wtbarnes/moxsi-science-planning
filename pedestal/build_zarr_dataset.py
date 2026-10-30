@@ -1,9 +1,8 @@
 """
 Convert many FITS files to Zarr dataset
 """
-import pathlib
-
 import astropy.io.fits
+import dask
 import dask.array
 import numpy as np
 import pandas
@@ -33,7 +32,14 @@ fpgatemp_sh = _steinharthart([3.3540E-03, 2.5708E-04, 1.8939E-06, 1.8973E-07])
 thermadc_sh = _steinharthart([3.3540E-03, 3.0013E-04, 5.0852E-06, 2.1877E-07])
 
 
-def list_of_files_to_ds(filenames, chunk_shape=None):
+def _read_fits_image(filename):
+    with astropy.io.fits.open(filename, memmap=False) as hdul:
+        image = hdul[0].data[:MOXSI_DETECTOR_SHAPE[0], :MOXSI_DETECTOR_SHAPE[1]]
+        # Copy so the returned array remains valid after the FITS file closes.
+        return np.array(image, copy=True)
+
+
+def list_of_files_to_ds(filenames):
     """
     Transform a list of MOXSI FITS files to a single xarray DataSet
 
@@ -42,25 +48,26 @@ def list_of_files_to_ds(filenames, chunk_shape=None):
     filenames
     """
     # Build dataset
-    data = np.empty((len(filenames),)+MOXSI_DETECTOR_SHAPE)
     meta_keys = [
         'DET0TEMP', 'DET1TEMP', 'THERMADC', 'FPGATEMP', 'EXPTIME', 'DATE', 'FRAME_ID'
     ]
     meta_arrays = {k: [] for k in meta_keys}
+    frames = []
     for i, filename in enumerate(tqdm.tqdm(filenames)):
         with astropy.io.fits.open(filename, memmap=False) as hdul:
             _header = hdul[0].header
-            data[i,...] = hdul[0].data[:MOXSI_DETECTOR_SHAPE[0], :MOXSI_DETECTOR_SHAPE[1]]  #trim extra rows/columns
+            image_dtype = hdul[0].data.dtype
+            # data[i,...] = hdul[0].data[:MOXSI_DETECTOR_SHAPE[0], :MOXSI_DETECTOR_SHAPE[1]]
+        # NOTE: This avoids having to read in the whole array into memory
+        frames.append(dask.array.from_delayed(
+            dask.delayed(_read_fits_image)(filename),
+            shape=MOXSI_DETECTOR_SHAPE,
+            dtype=image_dtype,
+        ))
         for k in meta_arrays.keys():
             meta_arrays[k].append(_header[k])
+    data = dask.array.stack(frames, axis=0)
     time_coord = pandas.to_datetime(meta_arrays['DATE'])
-    if chunk_shape is None:
-        # NOTE: These chunk sizes are somewhat arbitrary, but seem to work fairly well for this detector shape
-        chunk_shape = (data.shape[1]//20, data.shape[2]//15)
-    data = dask.array.from_array(
-        data,
-        chunks=(None,)+chunk_shape
-    )
     ds = xarray.Dataset(
         {'data': (["sample", "row", "column"], data),},
         coords={
