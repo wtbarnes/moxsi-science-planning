@@ -35,4 +35,4 @@ if __name__ == '__main__':
         errors='ignore',
     )
     coeff_arrays = da_fit.curvefit_coefficients.compute()
-    coeff_arrays.to_netcdf(data_dir / OUTPUT_FILENAME)
+    coeff_arrays.to_netcdf(data_dir / 'pedestal_fit_parameters' / OUTPUT_FILENAME)
